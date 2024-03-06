@@ -1,0 +1,9 @@
+PATH_TRAIN = "/content/drive/MyDrive/Datasets/data_captcha_real/train/"
+PATH_VAL = "/content/drive/MyDrive/Datasets/data_captcha_real/validation/"
+PATH_TRAIN_LABELS = "/content/drive/MyDrive/Datasets/data_captcha_real/train.csv"
+PATH_VAL_LABELS ="/content/drive/MyDrive/Datasets/data_captcha_real/validation.csv"
+PATH_TRAIN_SINTETICO = "/content/drive/MyDrive/Datasets/data_captcha_sintetico/train_images/"
+PATH_VAL_SINTETICO = "/content/drive/MyDrive/Datasets/data_captcha_sintetico/validation_images/"
+NUMBERS = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
+ALL_CHAR_SET_LEN = len(NUMBERS)
+MAX_CAPTCHA = 6
