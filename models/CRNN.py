@@ -5,50 +5,124 @@ from torchvision import models
 from constants import ALL_CHAR_SET_LEN, MAX_CAPTCHA
 from accuracy import calcular_accuracy
 
+class CRNN(nn.Module):
+
+    def __init__(self, img_channel, img_height, img_width, num_class,
+                map_to_seq_hidden=64, rnn_hidden=256, leaky_relu=False):
+        super(CRNN, self).__init__()
+
+        self.cnn = nn.Sequential(
+            nn.Conv2d(img_channel, 64, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(inplace=True) if not leaky_relu else nn.LeakyReLU(0.2, inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+
+            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(inplace=True) if not leaky_relu else nn.LeakyReLU(0.2, inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+
+            nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(inplace=True) if not leaky_relu else nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(inplace=True) if not leaky_relu else nn.LeakyReLU(0.2, inplace=True),
+            nn.MaxPool2d(kernel_size=(2, 1)),
+
+            nn.Conv2d(256, 512, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(512),
+            nn.ReLU(inplace=True) if not leaky_relu else nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(512),
+            nn.ReLU(inplace=True) if not leaky_relu else nn.LeakyReLU(0.2, inplace=True),
+            nn.MaxPool2d(kernel_size=(2, 1)),
+
+            nn.Conv2d(512, 512, kernel_size=2, stride=1),
+            nn.ReLU(inplace=True) if not leaky_relu else nn.LeakyReLU(0.2, inplace=True)
+        )
+
+        # Calculating output dimensions after CNN layers
+        output_height = img_height // 16 - 1
+        output_width = img_width // 4 - 1
+        output_channel = 512
+
+        self.map_to_seq = nn.Linear(output_channel * output_height, map_to_seq_hidden)
+
+        self.rnn1 = nn.LSTM(map_to_seq_hidden, rnn_hidden, bidirectional=True)
+        self.rnn2 = nn.LSTM(2 * rnn_hidden, rnn_hidden, bidirectional=True)
+
+        self.dense = nn.Linear(2 * rnn_hidden, num_class)
+
+    def forward(self, images):
+        # shape of images: (batch, channel, height, width)
+
+        conv = self.cnn(images)
+        batch, channel, height, width = conv.size()
+
+        conv = conv.view(batch, channel * height, width)
+        conv = conv.permute(2, 0, 1)  # (width, batch, feature)
+        seq = self.map_to_seq(conv)
+
+        recurrent, _ = self.rnn1(seq)
+        recurrent, _ = self.rnn2(recurrent)
+
+        output = self.dense(recurrent)
+        return output  # shape: (seq_len, batch, num_class)
+
+
 class CaptchaModel_ConvLSTM(pl.LightningModule):
     def __init__(self):
         super(CaptchaModel_ConvLSTM, self).__init__()
-        self.conv_block = nn.Sequential(
-            nn.Conv2d(in_channels=3, out_channels=128, kernel_size=(3, 6), stride=1, padding=(1, 1)),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=(2, 2)),
-            nn.Conv2d(in_channels=128, out_channels=64, kernel_size=(3, 6), stride=1, padding=(1, 1)),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=(2, 2)),
-        )
-        self.fc1 = nn.Sequential(nn.Linear(in_features=1152, out_features=64, bias=True),
-                                nn.ReLU())
-        self.drop = nn.Dropout(p=0.2)
-        self.lstm = nn.LSTM(input_size=64, hidden_size=32, num_layers=2, batch_first=True, bidirectional=True, dropout=0.25)
-        self.fc2 = nn.Linear(in_features=64, out_features=ALL_CHAR_SET_LEN*MAX_CAPTCHA, bias=True)
+        self.CRNN = CRNN(3, 256, 256, ALL_CHAR_SET_LEN * MAX_CAPTCHA)
         
     def forward(self, x):
-        batch, _, _, _ = x.size()
-        # use only the conv and the fc
-        x = self.conv_block(x)
-        x = x.permute(0, 3, 1, 2)
-        x = x.view(batch, x.size(1), -1)
-        x = self.fc1(x)
-        x = self.drop(x)
-        x, _ = self.lstm(x)
-        x = self.fc2(x)
-        x = x.permute(1, 0, 2)
+        x = self.CRNN(x)
         
         return x
-        
     
     def training_step(self, batch, batch_idx):
-        x, y, label = batch
-        y_hat = self(x)
-        loss_func = nn.MultiLabelSoftMarginLoss()
-        loss = loss_func(y_hat, y)
+        x, y_oh, label = batch
+        logits = self(x)
+        # print(x.shape)
+        # print(logits.shape)
+        # tensor con los indices de los caracteres
+        targets = torch.LongTensor([int(i) for i in label[0]]) # label es una tupla del tipo (str, )
+        
+        # definimos el CTC loss
+        loss_fun = nn.CTCLoss(reduction='mean')
+        
+        # definimos las variables que necesita el CTC loss
+        log_probs = nn.functional.log_softmax(logits, dim=2)
+        batch_size = x.size(0)
+        input_lengths = torch.LongTensor([logits.size(0)] * batch_size)
+        target_lengths = torch.randint(low=6, high=7, size=(batch_size,), dtype=torch.long)
+        
+        loss = loss_fun(log_probs, targets, input_lengths, target_lengths)
+        self.log('train_loss', loss)
+        
         return loss
     
     def validation_step(self, batch, batch_idx):
-        x, y, label = batch
-        y_hat = self(x)
-        loss_func = nn.MultiLabelSoftMarginLoss()
-        loss = loss_func(y_hat, y)
+        x, y_oh, label = batch
+        logits = self(x)
+        print("Shape of input: ", x.shape)
+        print("Shape of logits: ", logits.shape)
+        print("Label: ", label, type(label))
+        # tensor con los indices de los caracteres
+        targets = torch.LongTensor([int(i) for i in label[0]]) # label es una tupla del tipo (str, )
+        print("Targets: ", targets)
+        # definimos el CTC loss
+        loss_fun = nn.CTCLoss(reduction='mean')
+        
+        # definimos las variables que necesita el CTC loss
+        log_probs = nn.functional.log_softmax(logits, dim=2)
+        batch_size = x.size(0)
+        print("Batch size: ", x.size(0))
+        input_lengths = torch.LongTensor([logits.size(0)] * batch_size)
+        target_lengths = torch.randint(low=6, high=7, size=(batch_size,), dtype=torch.long)
+        print("Input lengths: ", input_lengths)
+        print("Target lengths: ", target_lengths)
+        
+        loss = loss_fun(log_probs, targets, input_lengths, target_lengths)
+        self.log('val_loss', loss)
+        
         return loss
     
     def configure_optimizers(self):
