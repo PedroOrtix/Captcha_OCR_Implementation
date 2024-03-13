@@ -13,7 +13,7 @@ class CaptchaModel_EfficentNet(pl.LightningModule):
 
         # dejamos el último bloque sin congelar mas la fc
         for name, layer in self.efficent_net.named_parameters():
-            if "6" in name or "7" in name or "8" in name or "classifier" in name:
+            if "5" in name or "6" in name or "7" in name or "8" in name or "classifier" in name:
                 layer.requires_grad = True
             else:
                 layer.requires_grad = False
