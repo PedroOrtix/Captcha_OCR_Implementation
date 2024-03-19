@@ -70,7 +70,7 @@ class CRNN(nn.Module):
 class CaptchaModel_ConvLSTM(pl.LightningModule):
     def __init__(self):
         super(CaptchaModel_ConvLSTM, self).__init__()
-        self.CRNN = CRNN(3, 256, 256, ALL_CHAR_SET_LEN * MAX_CAPTCHA)
+        self.CRNN = CRNN(3, 256, 256, 378)
         
     def forward(self, x):
         x = self.CRNN(x)
@@ -92,7 +92,7 @@ class CaptchaModel_ConvLSTM(pl.LightningModule):
         log_probs = nn.functional.log_softmax(logits, dim=2)
         batch_size = x.size(0)
         input_lengths = torch.LongTensor([logits.size(0)] * batch_size)
-        target_lengths = torch.randint(low=6, high=7, size=(batch_size,), dtype=torch.long)
+        target_lengths = torch.LongTensor([6] * batch_size)
         
         loss = loss_fun(log_probs, targets, input_lengths, target_lengths)
         self.log('train_loss', loss)
@@ -116,7 +116,7 @@ class CaptchaModel_ConvLSTM(pl.LightningModule):
         batch_size = x.size(0)
         print("Batch size: ", x.size(0))
         input_lengths = torch.LongTensor([logits.size(0)] * batch_size)
-        target_lengths = torch.randint(low=6, high=7, size=(batch_size,), dtype=torch.long)
+        target_lengths = torch.LongTensor([6] * batch_size)
         print("Input lengths: ", input_lengths)
         print("Target lengths: ", target_lengths)
         
