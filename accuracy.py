@@ -5,7 +5,7 @@ from preprocessing import rellenar_con_ceros
 # ESTA FUNCION ESTA EN ESTADO DE PRUEBA
 def calcular_accuracy(predictions, labels):
     # Ajustar las dimensiones de las predicciones
-    predictions = predictions.view(-1, 10)
+    predictions = predictions.view(-1, 13)
     probabilities = torch.nn.functional.softmax(predictions, dim=1)
 
     # Obtener las clases predichas
